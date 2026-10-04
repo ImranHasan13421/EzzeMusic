@@ -40,6 +40,8 @@ dependencies:
 
   # File picking (iOS import)
   file_picker: ^10.3.10
+  video_player: ^2.11.1
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
@@ -66,3 +68,6 @@ flutter:
 
   assets:
     - assets/icon/
+    - assets/intro/
+    - assets/intro/intro_video.mp4
+    - assets/intro/intro_music.mp3

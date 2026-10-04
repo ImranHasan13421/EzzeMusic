@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
+
 import 'state/app_state.dart';
-import 'ui/home_shell.dart';
 import 'ui/screens/splash_screen.dart';
+import 'ui/theme/app_colors.dart';
+import 'ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,73 +36,25 @@ class EzzeMusic extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // We wrap MaterialApp in a Consumer so it rebuilds when accentColor changes
     return Consumer<AppState>(
       builder: (context, app, child) {
         final accent = app.accentColor;
+        final platformBrightness =
+            WidgetsBinding.instance.platformDispatcher.platformBrightness;
+        final isDark = switch (app.themeMode) {
+          ThemeMode.dark => true,
+          ThemeMode.light => false,
+          ThemeMode.system => platformBrightness == Brightness.dark,
+        };
+        AppColors.current =
+            isDark ? AppColors.darkPalette : AppColors.lightPalette;
 
         return MaterialApp(
           title: 'EzzeMusic',
           debugShowCheckedModeBanner: false,
-
-          // Apply the user's saved theme mode (Dark/Light/System)
           themeMode: app.themeMode,
-
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.dark,
-
-            // ── GLOBAL COLORS ──────────────────────────────────────
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: accent,
-              primary: accent,
-              secondary: accent,
-              surface: const Color(0xFF09090B), // Deep luxury black
-              brightness: Brightness.dark,
-            ),
-            scaffoldBackgroundColor: const Color(0xFF09090B),
-
-            // ── SLIDER THEME (Global Seekbars) ─────────────────────
-            sliderTheme: SliderThemeData(
-              activeTrackColor: accent,
-              thumbColor: accent,
-              overlayColor: accent.withOpacity(0.12),
-              trackHeight: 4,
-            ),
-
-            // ── SWITCH THEME ───────────────────────────────────────
-            switchTheme: SwitchThemeData(
-              thumbColor: WidgetStateProperty.resolveWith((states) =>
-              states.contains(WidgetState.selected) ? accent : null),
-              trackColor: WidgetStateProperty.resolveWith((states) =>
-              states.contains(WidgetState.selected) ? accent.withOpacity(0.5) : null),
-            ),
-
-            // ── NAVIGATION BAR THEME ──────────────────────────────
-            navigationBarTheme: NavigationBarThemeData(
-              backgroundColor: const Color(0xFF18181B),
-              indicatorColor: accent.withOpacity(0.15),
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: accent);
-                }
-                return const IconThemeData(color: Color(0xFF71717A));
-              }),
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600);
-                }
-                return const TextStyle(color: Color(0xFF71717A), fontSize: 12);
-              }),
-            ),
-
-            // ── FLOATING ACTION BUTTON ────────────────────────────
-            floatingActionButtonTheme: FloatingActionButtonThemeData(
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-            ),
-          ),
-
+          theme: AppTheme.light(accent),
+          darkTheme: AppTheme.dark(accent),
           home: const SplashScreen(),
         );
       },

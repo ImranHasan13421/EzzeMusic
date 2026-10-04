@@ -2,33 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/app_state.dart';
-import '../../ui/screens/playlist_detail_screen.dart';
+import '../theme/app_colors.dart';
+import '../widgets/shared/action_buttons.dart';
+import '../widgets/shared/app_dialogs.dart';
+import 'playlist_detail_screen.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
 
-  // ── Design tokens (Static) ──────────────────────────────────────
-  static const _bgDeep        = Color(0xFF09090B);
-  static const _bgGlass       = Color(0xFF18181B);
-  static const _textPrimary   = Color(0xFFFAFAFA);
-  static const _textSecondary = Color(0xFFA1A1AA);
-  static const _textMuted     = Color(0xFF71717A);
-  static const _divider       = Color(0xFF27272A);
-
   @override
   Widget build(BuildContext context) {
-    // 1. Link to Dynamic Accent
-    final accent    = Theme.of(context).colorScheme.primary;
-    final app       = context.watch<AppState>();
+    final accent = Theme.of(context).colorScheme.primary;
+    final app = context.watch<AppState>();
     final playlists = app.playlists;
-    final size      = MediaQuery.of(context).size;
+    final size = MediaQuery.of(context).size;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: RadialGradient(
-          center: Alignment(0, -0.4),
+          center: const Alignment(0, -0.4),
           radius: 1.1,
-          colors: [Color(0xFF18181B), _bgDeep],
+          colors: [AppColors.bgGlass, AppColors.bgDeep],
         ),
       ),
       child: SafeArea(
@@ -43,9 +37,9 @@ class PlaylistsScreen extends StatelessWidget {
                   Text(
                     'PLAYLISTS',
                     style: TextStyle(
-                      color: accent.withOpacity(0.7), // Dynamic
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
+                      color: accent.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
                       letterSpacing: 3,
                     ),
                   ),
@@ -57,42 +51,44 @@ class PlaylistsScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Your Library',
                               style: TextStyle(
-                                color: _textPrimary,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.2,
+                                color: AppColors.textPrimary,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
                               ),
                             ),
+                            const SizedBox(height: 2),
                             Text(
-                              '${playlists.length} '
-                                  '${playlists.length == 1 ? 'playlist' : 'playlists'}',
-                              style: const TextStyle(
-                                color: _textSecondary,
+                              '${playlists.length} ${playlists.length == 1 ? 'playlist' : 'playlists'}',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      // New playlist button (Dynamic)
+                      // New playlist button
                       GestureDetector(
                         onTap: () => _createPlaylist(context, accent),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 9),
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [accent.withOpacity(0.8), accent],
+                              colors: [accent.withValues(alpha: 0.85), accent],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(50),
                             boxShadow: [
                               BoxShadow(
-                                color: accent.withOpacity(0.35),
+                                color: accent.withValues(alpha: 0.35),
                                 blurRadius: 14,
                                 offset: const Offset(0, 4),
                               ),
@@ -101,14 +97,14 @@ class PlaylistsScreen extends StatelessWidget {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.add_rounded, color: Colors.white, size: 16),
+                              Icon(Icons.add_rounded, color: Colors.white, size: 18),
                               SizedBox(width: 6),
                               Text(
                                 'New',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
                                   letterSpacing: 0.3,
                                 ),
                               ),
@@ -123,7 +119,7 @@ class PlaylistsScreen extends StatelessWidget {
               ),
             ),
 
-            // ── Content ──
+            // ── Body ──
             Expanded(
               child: playlists.isEmpty
                   ? _buildEmptyState(context, accent)
@@ -136,108 +132,268 @@ class PlaylistsScreen extends StatelessWidget {
   }
 
   // ── Playlist list ──
-  Widget _buildPlaylistList(BuildContext context, AppState app,
-      List playlists, Size size, Color accent) {
-    return ListView.separated(
-      padding: EdgeInsets.fromLTRB(
-          size.width * 0.04, 4, size.width * 0.04, 120),
-      itemCount: playlists.length,
-      separatorBuilder: (_, __) =>
-      const Divider(height: 1, color: _divider, indent: 72),
-      itemBuilder: (context, index) {
-        final p = playlists[index];
-        return _PlaylistRow(
-          name: p.name,
-          songCount: p.songIds.length,
-          accentColor: accent,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => PlaylistDetailScreen(playlistId: p.id),
+  Widget _buildPlaylistList(
+    BuildContext context,
+    AppState app,
+    List playlists,
+    Size size,
+    Color accent,
+  ) {
+    final customPlaylists = playlists.where((p) => p.id != 'pl_favourites').toList();
+    final likedCount = app.likedSongs.length;
+    final favPlaylist = app.favouritesPlaylist;
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(size.width * 0.04, 4, size.width * 0.04, 130),
+      children: [
+        // ── Liked Songs Hero Card ──
+        GestureDetector(
+          onTap: () {
+            if (favPlaylist != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PlaylistDetailScreen(playlistId: favPlaylist.id),
+                ),
+              );
+            }
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFE91E63).withValues(alpha: 0.25),
+                  accent.withValues(alpha: 0.15),
+                  AppColors.bgGlass,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: const Color(0xFFE91E63).withValues(alpha: 0.35),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE91E63).withValues(alpha: 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF4081), Color(0xFFE040FB)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF4081).withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.favorite_rounded, color: Colors.white, size: 28),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Liked Songs',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$likedCount ${likedCount == 1 ? 'favorite track' : 'favorite tracks'}',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (likedCount > 0)
+                  IconButton(
+                    icon: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: accent,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    onPressed: () {
+                      final songs = app.likedSongs;
+                      if (songs.isNotEmpty) {
+                        app.player.setQueue(songs, startIndex: 0, playWhenReady: true);
+                      }
+                    },
+                  ),
+              ],
             ),
           ),
-          onRename: () => _renamePlaylist(context, p.id, p.name, accent),
-          onDelete: () => context.read<AppState>().deletePlaylist(p.id),
-        );
-      },
+        ),
+
+        // ── Custom Playlists Header ──
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'YOUR PLAYLISTS (${customPlaylists.length})',
+                style: TextStyle(
+                  color: accent.withValues(alpha: 0.8),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        if (customPlaylists.isEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+            decoration: BoxDecoration(
+              color: AppColors.bgGlass.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.playlist_add_rounded,
+                  color: AppColors.textMuted,
+                  size: 32,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'No custom playlists yet',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap "New" at the top to create one',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          )
+        else
+          ...customPlaylists.map((p) {
+            return Column(
+              children: [
+                _PlaylistRow(
+                  name: p.name,
+                  songCount: p.songIds.length,
+                  accentColor: accent,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PlaylistDetailScreen(playlistId: p.id),
+                    ),
+                  ),
+                  onRename: () => _renamePlaylist(context, p.id, p.name, accent),
+                  onDelete: () => context.read<AppState>().deletePlaylist(p.id),
+                ),
+                Divider(height: 1, color: AppColors.divider, indent: 72),
+              ],
+            );
+          }),
+      ],
     );
   }
 
   // ── Empty state ──
   Widget _buildEmptyState(BuildContext context, Color accent) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.bgGlass,
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Icon(
+              Icons.queue_music_rounded,
+              color: AppColors.textMuted,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'No playlists yet',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Create your first playlist to organize tracks',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+          GestureDetector(
+            onTap: () => _createPlaylist(context, accent),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _bgGlass,
-                border: Border.all(color: _divider),
+                color: accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(50),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
               ),
-              child: const Icon(Icons.queue_music_rounded,
-                  size: 36, color: _textMuted),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'No playlists yet',
-              style: TextStyle(
-                color: _textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Create your first playlist to get started.',
-              style: TextStyle(
-                  color: _textSecondary, fontSize: 13, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: () => _createPlaylist(context, accent),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [accent.withOpacity(0.8), accent],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_rounded, color: accent, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Create Playlist',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(50),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withOpacity(0.35),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      'Create Playlist',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -255,12 +411,18 @@ class PlaylistsScreen extends StatelessWidget {
     );
     if (ok != true) return;
     if (!context.mounted) return;
-    await context.read<AppState>().createPlaylist(ctrl.text);
+    if (ctrl.text.trim().isNotEmpty) {
+      await context.read<AppState>().createPlaylist(ctrl.text.trim());
+    }
   }
 
   // ── Rename dialog ──
   Future<void> _renamePlaylist(
-      BuildContext context, String playlistId, String currentName, Color accent) async {
+    BuildContext context,
+    String playlistId,
+    String currentName,
+    Color accent,
+  ) async {
     final ctrl = TextEditingController(text: currentName);
     final ok = await _showPlaylistDialog(
       context: context,
@@ -272,7 +434,9 @@ class PlaylistsScreen extends StatelessWidget {
     );
     if (ok != true) return;
     if (!context.mounted) return;
-    await context.read<AppState>().renamePlaylist(playlistId, ctrl.text);
+    if (ctrl.text.trim().isNotEmpty) {
+      await context.read<AppState>().renamePlaylist(playlistId, ctrl.text.trim());
+    }
   }
 
   Future<bool?> _showPlaylistDialog({
@@ -285,8 +449,8 @@ class PlaylistsScreen extends StatelessWidget {
   }) {
     return showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.7),
-      builder: (context) => _ThemedDialog(
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      builder: (context) => ThemedInputDialog(
         title: title,
         hint: hint,
         confirmLabel: confirmLabel,
@@ -297,7 +461,7 @@ class PlaylistsScreen extends StatelessWidget {
   }
 }
 
-// ── Playlist Row (Dynamic Accent) ──────────────────────────────────────────────
+// ── Playlist Row ─────────────────────────────────────────────────────────────
 
 class _PlaylistRow extends StatefulWidget {
   final String name;
@@ -323,41 +487,44 @@ class _PlaylistRow extends StatefulWidget {
 class _PlaylistRowState extends State<_PlaylistRow> {
   bool _pressed = false;
 
-  static const _bgGlass       = Color(0xFF18181B);
-  static const _textPrimary   = Color(0xFFFAFAFA);
-  static const _textSecondary = Color(0xFFA1A1AA);
-  static const _textMuted     = Color(0xFF71717A);
-  static const _divider       = Color(0xFF27272A);
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) { setState(() => _pressed = false); widget.onTap(); },
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 110),
         curve: Curves.easeOut,
-        transform: Matrix4.identity()..scale(_pressed ? 0.98 : 1.0),
+        transform: Matrix4.diagonal3Values(
+          _pressed ? 0.98 : 1.0,
+          _pressed ? 0.98 : 1.0,
+          1.0,
+        ),
         transformAlignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
         decoration: BoxDecoration(
-          color: _pressed ? _bgGlass.withOpacity(0.6) : Colors.transparent,
+          color: _pressed ? AppColors.bgGlass.withValues(alpha: 0.6) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _bgGlass,
-                border: Border.all(color: _divider),
+                color: AppColors.bgGlass,
+                border: Border.all(color: AppColors.divider),
               ),
-              child: Icon(Icons.queue_music_rounded,
-                  color: widget.songCount > 0 ? widget.accentColor : _textMuted,
-                  size: 20),
+              child: Icon(
+                Icons.queue_music_rounded,
+                color: widget.songCount > 0 ? widget.accentColor : AppColors.textMuted,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -366,205 +533,45 @@ class _PlaylistRowState extends State<_PlaylistRow> {
                 children: [
                   Text(
                     widget.name,
-                    style: const TextStyle(
-                      color: _textPrimary,
-                      fontSize: 14,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
-                    '${widget.songCount} '
-                        '${widget.songCount == 1 ? 'song' : 'songs'}',
-                    style: const TextStyle(
-                      color: _textSecondary,
+                    '${widget.songCount} ${widget.songCount == 1 ? 'song' : 'songs'}',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),
                 ],
               ),
             ),
-            _ThemedPopupMenu(
-              onRename: widget.onRename,
-              onDelete: widget.onDelete,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Themed Popup Menu ─────────────────────────────────────────────────────────
-
-class _ThemedPopupMenu extends StatelessWidget {
-  final VoidCallback onRename;
-  final VoidCallback onDelete;
-
-  const _ThemedPopupMenu({required this.onRename, required this.onDelete});
-
-  @override
-  Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        popupMenuTheme: PopupMenuThemeData(
-          color: const Color(0xFF18181B),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Color(0xFF27272A)),
-          ),
-        ),
-      ),
-      child: PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'rename') onRename();
-          if (v == 'delete') onDelete();
-        },
-        icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF71717A), size: 20),
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: 'rename',
-            child: Row(
-              children: const [
-                Icon(Icons.drive_file_rename_outline_rounded, color: Colors.white, size: 16),
-                SizedBox(width: 10),
-                Text('Rename', style: TextStyle(color: Colors.white, fontSize: 13)),
-              ],
-            ),
-          ),
-          const PopupMenuDivider(height: 1),
-          PopupMenuItem(
-            value: 'delete',
-            child: Row(
-              children: const [
-                Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
-                SizedBox(width: 10),
-                Text('Delete', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Themed Dialog (Dynamic Accent) ─────────────────────────────────────────────
-
-class _ThemedDialog extends StatelessWidget {
-  final String title;
-  final String hint;
-  final String confirmLabel;
-  final TextEditingController controller;
-  final Color accentColor;
-
-  const _ThemedDialog({
-    required this.title,
-    required this.hint,
-    required this.confirmLabel,
-    required this.controller,
-    required this.accentColor,
-  });
-
-  static const _bgGlass       = Color(0xFF18181B);
-  static const _textPrimary   = Color(0xFFFAFAFA);
-  static const _textSecondary = Color(0xFFA1A1AA);
-  static const _textMuted     = Color(0xFF71717A);
-  static const _divider       = Color(0xFF27272A);
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: _bgGlass,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _divider),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.5),
-              blurRadius: 32,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(color: _textPrimary, fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF09090B),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _divider),
-              ),
-              child: TextField(
-                controller: controller,
-                autofocus: true,
-                style: const TextStyle(color: _textPrimary, fontSize: 14),
-                cursorColor: accentColor,
-                decoration: InputDecoration(
-                  hintText: hint,
-                  hintStyle: const TextStyle(color: _textMuted, fontSize: 14),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context, false),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF09090B),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _divider),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text('Cancel', style: TextStyle(color: _textSecondary, fontSize: 14)),
-                    ),
+            ThemedMenu(
+              onSelected: (val) {
+                if (val == 'rename') widget.onRename();
+                if (val == 'delete') widget.onDelete();
+              },
+              items: const [
+                PopupMenuItem(
+                  value: 'rename',
+                  child: ThemedMenuItem(
+                    icon: Icons.drive_file_rename_outline_rounded,
+                    label: 'Rename',
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context, true),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [accentColor.withOpacity(0.8), accentColor],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: accentColor.withOpacity(0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        confirmLabel,
-                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
-                      ),
-                    ),
+                PopupMenuDivider(height: 1),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: ThemedMenuItem(
+                    icon: Icons.delete_outline_rounded,
+                    label: 'Delete',
+                    isDestructive: true,
                   ),
                 ),
               ],

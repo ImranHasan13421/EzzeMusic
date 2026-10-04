@@ -61,5 +61,22 @@ class Playlist {
       createdAtMs: (json['createdAtMs'] as num?)?.toInt() ?? 0,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Playlist &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          const ListEquality().equals(songIds, other.songIds) &&
+          createdAtMs == other.createdAtMs;
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      const ListEquality().hash(songIds) ^
+      createdAtMs.hashCode;
 }
 

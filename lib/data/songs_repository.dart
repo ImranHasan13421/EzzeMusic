@@ -34,10 +34,8 @@ class SongsRepository {
     if (Platform.isAndroid) {
       return getDeviceSongsAscending();
     }
-    if (Platform.isIOS) {
-      return getImportedSongsAscending();
-    }
-    return const [];
+    // iOS, desktop, and web all use the imported songs path
+    return getImportedSongsAscending();
   }
 
   Future<List<Song>> getDeviceSongsAscending() async {
@@ -89,7 +87,8 @@ class SongsRepository {
   }
 
   Future<List<Song>> importSongsFromFilesPicker() async {
-    if (!Platform.isIOS) return const [];
+    // File picker import is available on all platforms except Android (which uses MediaStore)
+    if (Platform.isAndroid) return await getDeviceSongsAscending();
     await init();
 
     final result = await FilePicker.platform.pickFiles(

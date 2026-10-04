@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:just_audio/just_audio.dart';
@@ -10,7 +12,7 @@ enum PlaybackRepeatMode { off, one, all }
 class PlayerController {
   final AudioPlayer _player = AudioPlayer();
   final List<Song> _queue = <Song>[];
-  final List<AudioSource> _sources = <AudioSource>[];
+  ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
   final StreamController<List<Song>> _queueController =
   StreamController<List<Song>>.broadcast();
@@ -40,6 +42,8 @@ class PlayerController {
   Stream<ProcessingState> get processingStateStream =>
       _player.processingStateStream;
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
+  Stream<double> get speedStream => _player.speedStream;
+  double get speed => _player.speed;
   Stream<PlaybackRepeatMode> get repeatModeStream =>
       _repeatModeController.stream;
   Stream<bool> get shuffleEnabledStream => _shuffleController.stream;
@@ -67,7 +71,7 @@ class PlayerController {
     // the new track, so the index is always the correct new value.
     _sequenceSub?.cancel();
     _sequenceSub = _player.sequenceStateStream.listen((state) {
-      if (state == null || _queue.isEmpty) {
+      if (_queue.isEmpty) {
         _currentSongController.add(null);
         return;
       }
@@ -107,16 +111,17 @@ class PlayerController {
     _queue
       ..clear()
       ..addAll(songs);
-    _sources
-      ..clear()
-      ..addAll(songs.map(_toAudioSource));
+
+    _playlist = ConcatenatingAudioSource(
+      children: songs.map(_toAudioSource).toList(),
+    );
     _queueController.add(queue);
 
     final safeStart =
     (startIndex < 0 || startIndex >= songs.length) ? 0 : startIndex;
 
-    await _player.setAudioSources(
-      _sources,
+    await _player.setAudioSource(
+      _playlist,
       initialIndex: safeStart,
       initialPosition: Duration.zero,
     );
@@ -202,6 +207,14 @@ class PlayerController {
     _repeatModeController.add(mode);
   }
 
+  Future<void> toggleShuffle() async {
+    await setShuffleEnabled(!_shuffleEnabled);
+  }
+
+  Future<void> toggleRepeat() async {
+    await cycleRepeatMode();
+  }
+
   Future<void> cycleRepeatMode() async {
     final next = switch (_repeatMode) {
       PlaybackRepeatMode.off => PlaybackRepeatMode.all,
@@ -209,6 +222,18 @@ class PlayerController {
       PlaybackRepeatMode.one => PlaybackRepeatMode.off,
     };
     await setRepeatMode(next);
+  }
+
+  Future<void> setSpeed(double speed) async {
+    await _player.setSpeed(speed.clamp(0.25, 3.0));
+  }
+
+  Future<void> clearQueue() async {
+    await stop();
+    _queue.clear();
+    _playlist = ConcatenatingAudioSource(children: []);
+    _queueController.add([]);
+    _currentSongController.add(null);
   }
 
   Future<void> addToQueueNext(Song song) async {
@@ -220,8 +245,7 @@ class PlayerController {
     final insertAt =
     (idx < 0) ? _queue.length : (idx + 1).clamp(0, _queue.length);
     _queue.insert(insertAt, song);
-    _sources.insert(insertAt, _toAudioSource(song));
-    await _reloadSources(keepPosition: true);
+    await _playlist.insert(insertAt, _toAudioSource(song));
     _queueController.add(queue);
   }
 
@@ -231,8 +255,7 @@ class PlayerController {
       return;
     }
     _queue.add(song);
-    _sources.add(_toAudioSource(song));
-    await _reloadSources(keepPosition: true);
+    await _playlist.add(_toAudioSource(song));
     _queueController.add(queue);
   }
 
@@ -240,15 +263,8 @@ class PlayerController {
     if (_queue.isEmpty) return;
     if (index < 0 || index >= _queue.length) return;
 
-    final current = currentIndex ?? 0;
-    final currentPos = _player.position;
     _queue.removeAt(index);
-    _sources.removeAt(index);
-    await _reloadSources(
-      keepPosition: true,
-      preferredIndex: current > index ? current - 1 : current,
-      preferredPosition: currentPos,
-    );
+    await _playlist.removeAt(index);
     _queueController.add(queue);
     if (_queue.isEmpty) await stop();
   }
@@ -259,61 +275,11 @@ class PlayerController {
     if (to < 0 || to >= _queue.length) return;
     if (from == to) return;
 
-    final current = currentIndex ?? 0;
-    final currentPos = _player.position;
-
     final song = _queue.removeAt(from);
     _queue.insert(to, song);
 
-    final src = _sources.removeAt(from);
-    _sources.insert(to, src);
-
-    final nextIndex =
-    _remapIndexAfterMove(current, from: from, to: to);
-    await _reloadSources(
-      keepPosition: true,
-      preferredIndex: nextIndex,
-      preferredPosition: currentPos,
-    );
+    await _playlist.move(from, to);
     _queueController.add(queue);
-  }
-
-  int _remapIndexAfterMove(
-      int current, {required int from, required int to}) {
-    if (current == from) return to;
-    if (from < to) {
-      if (current > from && current <= to) return current - 1;
-    } else {
-      if (current >= to && current < from) return current + 1;
-    }
-    return current;
-  }
-
-  Future<void> _reloadSources({
-    required bool keepPosition,
-    int? preferredIndex,
-    Duration? preferredPosition,
-  }) async {
-    if (_queue.isEmpty) {
-      await stop();
-      return;
-    }
-
-    final idx = preferredIndex ?? (currentIndex ?? 0);
-    final safeIdx = idx.clamp(0, _queue.length - 1);
-    final pos = keepPosition
-        ? (preferredPosition ?? _player.position)
-        : Duration.zero;
-
-    await _player.setAudioSources(
-      _sources,
-      initialIndex: safeIdx,
-      initialPosition: pos,
-    );
-
-    if (_shuffleEnabled) {
-      await _player.shuffle();
-    }
   }
 
   AudioSource _toAudioSource(Song song) {
@@ -326,10 +292,6 @@ class PlayerController {
       artUri: song.artworkUri,
     );
     return AudioSource.uri(Uri.parse(song.uri), tag: mediaItem);
-  }
-
-  void _emitCurrentSong() {
-    _currentSongController.add(currentSong);
   }
 
   Future<void> dispose() async {

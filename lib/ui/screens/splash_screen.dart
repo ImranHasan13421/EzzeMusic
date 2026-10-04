@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import '../home_shell.dart'; // Ensure this path points to your HomeShell file
+import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
-enum GifSize { small, medium, large, custom }
+import '../home_shell.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,50 +16,114 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  bool _isExiting = false;
-  bool _showBranding = false;
+  VideoPlayerController? _videoController;
+  late final AudioPlayer _introAudioPlayer;
+
+  bool _isVideoInitialized = false;
+  bool _isNavigating = false;
+  Timer? _fallbackTimer;
 
   @override
   void initState() {
     super.initState();
+    _introAudioPlayer = AudioPlayer();
 
-    // Trigger branding animation shortly after launch
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) setState(() => _showBranding = true);
+    _initializeIntroMedia();
+
+    // Fallback timer: intro_video is ~10 seconds. Fallback at 10.5s guarantees progression.
+    _fallbackTimer = Timer(const Duration(milliseconds: 10500), () {
+      _navigateToHome();
     });
-
-    _startExitTimer();
   }
 
-  Future<void> _startExitTimer() async {
-    // 1. Wait for the GIF to play out (Adjust this if your GIF is longer/shorter)
-    await Future.delayed(const Duration(milliseconds: 2800));
+  Future<void> _initializeIntroMedia() async {
+    // 1. Start audio playback in parallel with local cache guarantee
+    _playIntroMusic();
 
-    if (!mounted) return;
+    // 2. Initialize and play the custom MP4 intro video
+    try {
+      final controller = VideoPlayerController.asset('assets/intro/intro_video.mp4');
+      _videoController = controller;
 
-    // 2. Start fading out the GIF and Text
-    setState(() {
-      _isExiting = true;
-      _showBranding = false;
-    });
+      await controller.initialize();
+      await controller.setVolume(1.0);
+      await controller.setLooping(false);
 
-    // 3. Wait exactly 800ms for the fade-out animation to finish
-    await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
 
-    _navigateToNext();
+      setState(() {
+        _isVideoInitialized = true;
+      });
+
+      await controller.play();
+
+      controller.addListener(() {
+        if (!mounted || _isNavigating) return;
+        final value = controller.value;
+        if (value.isInitialized &&
+            value.duration > Duration.zero &&
+            value.position >= value.duration) {
+          _navigateToHome();
+        }
+      });
+    } catch (e) {
+      debugPrint('Intro video initialization error: $e');
+      // If video playback fails, fallback timer or audio completion will navigate
+    }
   }
 
-  void _navigateToNext() {
-    if (!mounted) return;
+  Future<void> _playIntroMusic() async {
+    try {
+      // Extract asset to a local cache file for 100% reliable offline playback on Android 14
+      // This bypasses Android localhost cleartext proxy restrictions completely.
+      final byteData = await rootBundle.load('assets/intro/intro_music.mp3');
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/intro_music.mp3');
+      await tempFile.writeAsBytes(
+        byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes),
+        flush: true,
+      );
 
-    // Premium Cross-Fade to your main HomeShell
+      await _introAudioPlayer.setFilePath(tempFile.path);
+      await _introAudioPlayer.setVolume(1.0);
+      await _introAudioPlayer.play();
+    } catch (e) {
+      debugPrint('Direct file audio playback failed, falling back to asset: $e');
+      try {
+        await _introAudioPlayer.setAsset('assets/intro/intro_music.mp3');
+        await _introAudioPlayer.setVolume(1.0);
+        await _introAudioPlayer.play();
+      } catch (err) {
+        debugPrint('Intro audio playback error: $err');
+      }
+    }
+  }
+
+  void _navigateToHome() {
+    if (_isNavigating || !mounted) return;
+    _isNavigating = true;
+
+    _fallbackTimer?.cancel();
+
+    // Gracefully stop media
+    try {
+      _videoController?.pause();
+    } catch (_) {}
+    try {
+      _introAudioPlayer.stop();
+    } catch (_) {}
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 1000),
-        pageBuilder: (context, animation, secondaryAnimation) => const HomeShell(),
+        transitionDuration: const Duration(milliseconds: 600),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const HomeShell(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeIn),
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
             child: child,
           );
         },
@@ -62,100 +131,64 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 
-  double _getGifSize(GifSize size) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    switch (size) {
-      case GifSize.small:
-        return screenWidth * 0.4;
-      case GifSize.large:
-        return screenWidth * 0.8;
-      case GifSize.medium:
-        return screenWidth * 0.6;
-      case GifSize.custom:
-      default:
-        return 350.0;
-    }
+  @override
+  void dispose() {
+    _fallbackTimer?.cancel();
+    _videoController?.dispose();
+    _introAudioPlayer.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final double currentSize = _getGifSize(GifSize.custom);
+    final size = MediaQuery.of(context).size;
+    final logoSize = (size.width * 0.65).clamp(240.0, 360.0);
 
     return Scaffold(
-      backgroundColor: Colors.black, // Matched to your app's deep background
-      body: Stack(
-        children: [
-          // ── CENTER ANIMATED GIF ──
-          Center(
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 500),
-              opacity: _isExiting ? 0.0 : 1.0,
-              child: Image.asset(
-                'assets/icon/splash.gif',
-                width: currentSize,
-                height: currentSize,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
+      backgroundColor: Colors.white,
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark,
+        child: GestureDetector(
+          // Allow tapping anywhere to enter instantly without any button clutter
+          onTap: _navigateToHome,
+          behavior: HitTestBehavior.opaque,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Clean white canvas matching native splash theme
+              Container(color: Colors.white),
 
-          // ── BOTTOM ANIMATED BRANDING ──
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 40.0),
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 800),
-                  opacity: _showBranding ? 1.0 : 0.0,
-                  child: AnimatedSlide(
-                    duration: const Duration(milliseconds: 800),
-                    curve: Curves.easeOutCubic,
-                    offset: _showBranding ? Offset.zero : const Offset(0, 0.5),
-                    // Removed 'const' from Column and added it to the individual Text/SizedBox widgets
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'A',
-                          style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 2),
-                        ),
-                        const SizedBox(height: 6),
-                        ShaderMask(
-                          blendMode: BlendMode.srcIn,
-                          shaderCallback: (bounds) => const LinearGradient(
-                            colors: [
-                              Color(0xFF00A3FF), // Bright Blue from the top-left of the icon
-                              Color(0xFF1854E3), // Deep Blue (Your original color)
-                              Color(0xFFB100FF), // Rich Purple/Magenta from the bottom-right
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ).createShader(bounds),
-                          child: const Text(
-                            'Ezze Softwares',
-                            style: TextStyle(
-                              // The color must be white for the gradient to paint over it properly
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'PRODUCT',
-                          style: TextStyle(color: Colors.white54, fontSize: 10, letterSpacing: 5, fontWeight: FontWeight.bold),
-                        ),
-                      ],
+              // Custom MP4 Intro Video
+              if (_isVideoInitialized && _videoController != null)
+                Center(
+                  child: SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _videoController!.value.size.width > 0
+                            ? _videoController!.value.size.width
+                            : size.width,
+                        height: _videoController!.value.size.height > 0
+                            ? _videoController!.value.size.height
+                            : size.height,
+                        child: VideoPlayer(_videoController!),
+                      ),
                     ),
                   ),
+                )
+              else
+                // Seamless placeholder during video initialization (matches native launch)
+                Center(
+                  child: Image.asset(
+                    'assets/icon/logo_white_bg.png',
+                    width: logoSize,
+                    height: logoSize,
+                    fit: BoxFit.contain,
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

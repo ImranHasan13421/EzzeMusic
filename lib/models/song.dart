@@ -86,5 +86,16 @@ class Song {
       artworkUri: artwork == null ? null : Uri.tryParse(artwork),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Song &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          uri == other.uri;
+
+  @override
+  int get hashCode => id.hashCode ^ uri.hashCode;
 }
 

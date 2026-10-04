@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // Required for compute()
@@ -21,6 +20,7 @@ class AppState extends ChangeNotifier {
   static const _kHideShortClipsKey = 'hideShortClips';
   static const _kFavouritesPlaylistId = 'pl_favourites';
   static const _kFavouritesPlaylistName = 'Favourite';
+  static const _kRecentSearchesKey = 'recent_searches.v1';
 
   late final SharedPreferences _prefs;
   late final PlayerController player;
@@ -32,10 +32,9 @@ class AppState extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
-  Color _accentColor = const Color(0xFF1854E3);
+  Color _accentColor = const Color(0xFF4044FA);
   Color get accentColor => _accentColor;
 
-  // 1. SET TO FALSE BY DEFAULT
   bool _hideShortClips = false;
   bool get hideShortClips => _hideShortClips;
 
@@ -44,11 +43,50 @@ class AppState extends ChangeNotifier {
   List<Song> _songsCache = const [];
   List<Song> get songsCache => _songsCache;
 
+  List<String> _recentSearches = [];
+  List<String> get recentSearches => List.unmodifiable(_recentSearches);
+
   final List<Playlist> _playlists = [];
   List<Playlist> get playlists => List.unmodifiable(_playlists);
 
   Playlist? get favouritesPlaylist =>
       _playlists.where((p) => p.id == _kFavouritesPlaylistId).firstOrNull;
+
+  List<Song> get likedSongs {
+    final fav = favouritesPlaylist;
+    if (fav == null || fav.songIds.isEmpty) return const [];
+    final set = fav.songIds.toSet();
+    return _songsCache.where((s) => set.contains(s.id)).toList();
+  }
+
+  List<String> get artists {
+    final set = <String>{};
+    for (final s in _songsCache) {
+      final a = s.artist.trim();
+      if (a.isNotEmpty && a.toLowerCase() != '<unknown>') {
+        set.add(a);
+      }
+    }
+    final list = set.toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  List<Song> songsForArtist(String artist) {
+    return _songsCache
+        .where((s) => s.artist.trim().toLowerCase() == artist.trim().toLowerCase())
+        .toList();
+  }
+
+  Map<String, List<Song>> get albums {
+    final map = <String, List<Song>>{};
+    for (final s in _songsCache) {
+      final a = s.album.trim();
+      final key = a.isEmpty ? 'Unknown Album' : a;
+      (map[key] ??= []).add(s);
+    }
+    return map;
+  }
 
   Timer? _sleepTimer;
   DateTime? _sleepEndsAt;
@@ -67,9 +105,10 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _loadTheme();
-    _loadPlaylists();
+    await _loadPlaylists(); // 🟢 NUCLEAR FIX: Awaited to prevent async race conditions
     _loadAccentColor();
-    _loadLibraryFilters(); // Loads saved state or defaults to false
+    _loadLibraryFilters();
+    _loadRecentSearches();
 
     player = PlayerController();
     await player.init();
@@ -91,12 +130,11 @@ class AppState extends ChangeNotifier {
   // ── Optimized Library Logic ──────────────────────────────────
 
   Future<void> refreshLibrarySongs({bool forceRescan = false}) async {
-    // 1. Fetch from storage only if needed
+    // Fetch from storage only if needed
     if (_allSongsMaster.isEmpty || forceRescan) {
       _allSongsMaster = await songsRepository.getLibrarySongsAscending();
     }
 
-    // 2. CONNECTION FIX: Populate the cache that the UI uses
     if (_hideShortClips) {
       // Background filtering to keep UI smooth
       _songsCache = await compute(_filterMusicLogic, _allSongsMaster);
@@ -108,18 +146,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // This was missing from your provided code!
   static List<Song> _filterMusicLogic(List<Song> songs) {
+    const validExtensions = {'.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.wma', '.opus'};
     return songs.where((s) {
       final duration = s.duration ?? Duration.zero;
       if (duration.inSeconds < 30) return false;
 
-      final path = s.uri;
-      return path.endsWith('.mp3') || path.endsWith('.MP3');
+      final path = s.uri.toLowerCase();
+      return validExtensions.any((ext) => path.endsWith(ext));
     }).toList();
   }
 
-  // This handles the switch in Settings
   Future<void> toggleHideShortClips(bool value) async {
     _hideShortClips = value;
     await _prefs.setBool(_kHideShortClipsKey, value);
@@ -128,7 +165,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> importSongs() async {
-    _songsCache = await songsRepository.importSongsFromFilesPicker();
+    final imported = await songsRepository.importSongsFromFilesPicker();
+    _allSongsMaster = imported; // Keep master cache in sync
+    _songsCache = List.from(imported);
     notifyListeners();
   }
 
@@ -174,6 +213,18 @@ class AppState extends ChangeNotifier {
     return fav != null && fav.songIds.contains(songId);
   }
 
+  Future<void> addSongsToFavourites(List<int> songIds) async {
+    final fav = await _ensureFavouritesPlaylist();
+    for (var id in songIds) {
+      final idx = _playlists.indexWhere((p) => p.id == fav.id);
+      if (idx != -1) {
+        _playlists[idx] = _playlists[idx].addSong(id);
+      }
+    }
+    await _savePlaylists();
+    notifyListeners();
+  }
+
   // ── Playlist Internals ───────────────────────────────────────
 
   Future<Playlist> _ensureFavouritesPlaylist() async {
@@ -216,7 +267,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> updateAccentColor(Color color) async {
     _accentColor = color;
-    await _prefs.setInt(_kAccentColorKey, color.value);
+    await _prefs.setInt(_kAccentColorKey, color.toARGB32());
     notifyListeners();
   }
 
@@ -231,11 +282,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Core Persistence ─────────────────────────────────────────
-
   void _loadLibraryFilters() {
-    // 2. FALLBACK TO FALSE IF NOT SAVED
     _hideShortClips = _prefs.getBool(_kHideShortClipsKey) ?? false;
+  }
+
+  void _loadRecentSearches() {
+    _recentSearches = _prefs.getStringList(_kRecentSearchesKey) ?? [];
+  }
+
+  Future<void> addSearchQuery(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    _recentSearches.removeWhere((item) => item.toLowerCase() == q.toLowerCase());
+    _recentSearches.insert(0, q);
+    if (_recentSearches.length > 15) {
+      _recentSearches = _recentSearches.sublist(0, 15);
+    }
+    await _prefs.setStringList(_kRecentSearchesKey, _recentSearches);
+    notifyListeners();
+  }
+
+  Future<void> clearRecentSearches() async {
+    _recentSearches.clear();
+    await _prefs.remove(_kRecentSearchesKey);
+    notifyListeners();
+  }
+
+  Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
+    final list = (contextQueue != null && contextQueue.isNotEmpty)
+        ? contextQueue
+        : _songsCache;
+    final idx = list.indexWhere((s) => s.id == song.id);
+    if (idx != -1) {
+      await player.setQueue(list, startIndex: idx, playWhenReady: true);
+    } else {
+      await player.setQueue([song, ...list.where((s) => s.id != song.id)],
+          startIndex: 0, playWhenReady: true);
+    }
+  }
+
+  Future<void> playSongsShuffled(List<Song> songs) async {
+    if (songs.isEmpty) return;
+    final shuffled = List<Song>.from(songs)..shuffle();
+    await player.setQueue(shuffled, startIndex: 0, playWhenReady: true);
+    await player.setShuffleEnabled(true);
   }
 
   Future<void> setSleepTimer(Duration? duration) async {
@@ -253,30 +343,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _saveLastPlayed() async {
-    final q = player.queue;
-    if (q.isEmpty) return;
-    await _prefs.setString(_kLastQueueKey, jsonEncode(q.map((e) => e.toJson()).toList()));
-    await _prefs.setInt(_kLastIndexKey, player.currentIndex ?? 0);
-  }
-
-  Future<void> _restoreLastPlayed() async {
-    final raw = _prefs.getString(_kLastQueueKey);
-    if (raw == null) return;
-    try {
-      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>().map(Song.fromJson).toList();
-      final idx = _prefs.getInt(_kLastIndexKey) ?? 0;
-      await player.setQueue(list, startIndex: idx.clamp(0, list.length - 1));
-    } catch (_) {}
-  }
-
-  void _loadPlaylists() {
-    final raw = _prefs.getString(_kPlaylistsKey);
-    _playlists..clear()..addAll(raw == null ? [] : (jsonDecode(raw) as List).cast<Map<String, dynamic>>().map(Playlist.fromJson));
-  }
-
-  Future<void> _savePlaylists() async => await _prefs.setString(_kPlaylistsKey, jsonEncode(_playlists.map((e) => e.toJson()).toList()));
-
   @override
   void dispose() {
     _sleepTimer?.cancel();
@@ -286,17 +352,60 @@ class AppState extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> addSongsToFavourites(List<int> songIds) async {
-    final fav = await _ensureFavouritesPlaylist(); // Guarantees it exists
-    for (var id in songIds) {
-      final idx = _playlists.indexWhere((p) => p.id == fav.id);
-      if (idx != -1) {
-        _playlists[idx] = _playlists[idx].addSong(id);
-      }
-    }
-    await _savePlaylists();
-    notifyListeners();
+  // ── Core Persistence (NUCLEAR FIX) ───────────────────────────
+
+  Future<void> _saveLastPlayed() async {
+    final q = player.queue;
+    if (q.isEmpty) return;
+
+    // NUCLEAR FIX: JSON Encoding sent to a background core
+    final jsonString = await compute(_encodeQueueWorker, q);
+    await _prefs.setString(_kLastQueueKey, jsonString);
+    await _prefs.setInt(_kLastIndexKey, player.currentIndex ?? 0);
   }
 
+  Future<void> _restoreLastPlayed() async {
+    final raw = _prefs.getString(_kLastQueueKey);
+    if (raw == null) return;
+    try {
+      // NUCLEAR FIX: JSON Decoding sent to a background core
+      final list = await compute(_decodeQueueWorker, raw);
+      final idx = _prefs.getInt(_kLastIndexKey) ?? 0;
+      await player.setQueue(list, startIndex: idx.clamp(0, list.length - 1));
+    } catch (_) {}
+  }
 
+  Future<void> _loadPlaylists() async {
+    final raw = _prefs.getString(_kPlaylistsKey);
+    if (raw != null) {
+      // NUCLEAR FIX: Decodes massive playlists without stuttering the UI
+      final decoded = await compute(_decodePlaylistsWorker, raw);
+      _playlists..clear()..addAll(decoded);
+    }
+  }
+
+  Future<void> _savePlaylists() async {
+    // NUCLEAR FIX: Encodes massive playlists without stuttering the UI
+    final jsonString = await compute(_encodePlaylistsWorker, _playlists);
+    await _prefs.setString(_kPlaylistsKey, jsonString);
+  }
+
+  // ── BACKGROUND WORKERS FOR HEAVY PARSING ─────────────────────
+  // These must be static so Flutter can safely run them in an Isolate
+
+  static String _encodeQueueWorker(List<Song> queue) {
+    return jsonEncode(queue.map((e) => e.toJson()).toList());
+  }
+
+  static List<Song> _decodeQueueWorker(String rawJson) {
+    return (jsonDecode(rawJson) as List).cast<Map<String, dynamic>>().map(Song.fromJson).toList();
+  }
+
+  static String _encodePlaylistsWorker(List<Playlist> playlists) {
+    return jsonEncode(playlists.map((e) => e.toJson()).toList());
+  }
+
+  static List<Playlist> _decodePlaylistsWorker(String rawJson) {
+    return (jsonDecode(rawJson) as List).cast<Map<String, dynamic>>().map(Playlist.fromJson).toList();
+  }
 }

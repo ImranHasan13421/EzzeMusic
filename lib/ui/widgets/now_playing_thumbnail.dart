@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../theme/app_colors.dart';
 
 class NowPlayingThumbnail extends StatelessWidget {
   final int songId;
@@ -8,11 +9,8 @@ class NowPlayingThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Link to the dynamic accent color from your theme
     final accent = Theme.of(context).colorScheme.primary;
     final size = MediaQuery.of(context).size;
-
-    // Responsive sizing: 75% of screen width
     final double artSize = size.width * 0.75;
 
     return Center(
@@ -20,18 +18,15 @@ class NowPlayingThumbnail extends StatelessWidget {
         width: artSize,
         height: artSize,
         decoration: BoxDecoration(
-          // ── CIRCULAR SHAPE ──
           shape: BoxShape.circle,
           boxShadow: [
-            // Deep shadow for physical depth
             BoxShadow(
-              color: Colors.black.withOpacity(0.6),
+              color: Colors.black.withValues(alpha: 0.6),
               blurRadius: 40,
               offset: const Offset(0, 20),
             ),
-            // Soft dynamic glow matching your theme color
             BoxShadow(
-              color: accent.withOpacity(0.15),
+              color: accent.withValues(alpha: 0.15),
               blurRadius: 50,
               spreadRadius: -2,
             ),
@@ -40,7 +35,6 @@ class NowPlayingThumbnail extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // ── 1. THE IMAGE (Clipped perfectly to Circle) ──
             ClipOval(
               child: QueryArtworkWidget(
                 id: songId,
@@ -52,15 +46,12 @@ class NowPlayingThumbnail extends StatelessWidget {
                 nullArtworkWidget: _buildPlaceholder(accent, artSize),
               ),
             ),
-
-            // ── 2. THE OVERLAY RIM (Hides edges perfectly) ──
-            // We put this on TOP of the image to mask any pixel gaps
             IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.12), // Subtle luxury rim
+                    color: Colors.white.withValues(alpha: 0.12),
                     width: 2.0,
                   ),
                 ),
@@ -77,16 +68,16 @@ class NowPlayingThumbnail extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
-          colors: [const Color(0xFF18181B), accent.withOpacity(0.1)],
+          colors: [AppColors.bgGlass, accent.withValues(alpha: 0.1)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
       ),
       child: Center(
         child: Icon(
-            Icons.music_note_rounded,
-            size: size * 0.35,
-            color: accent.withOpacity(0.25)
+          Icons.music_note_rounded,
+          size: size * 0.35,
+          color: accent.withValues(alpha: 0.25),
         ),
       ),
     );

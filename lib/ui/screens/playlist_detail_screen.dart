@@ -4,20 +4,16 @@ import 'package:provider/provider.dart';
 
 import '../../models/song.dart';
 import '../../state/app_state.dart';
+import '../theme/app_colors.dart';
 import '../widgets/mini_player_bar.dart';
+import '../widgets/shared/action_buttons.dart';
+import '../widgets/shared/app_dialogs.dart';
 import 'now_playing_screen.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
   final String playlistId;
 
   const PlaylistDetailScreen({super.key, required this.playlistId});
-
-  static const _bgDeep = Color(0xFF09090B);
-  static const _bgGlass = Color(0xFF18181B);
-  static const _textPrimary = Color(0xFFFAFAFA);
-  static const _textSecondary = Color(0xFFA1A1AA);
-  static const _textMuted = Color(0xFF71717A);
-  static const _divider = Color(0xFF27272A);
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +22,9 @@ class PlaylistDetailScreen extends StatelessWidget {
 
     // Safety check for deleted playlists
     final playlistIndex = app.playlists.indexWhere((p) => p.id == playlistId);
-    if (playlistIndex == -1) return const Scaffold(body: Center(child: Text("Playlist not found")));
+    if (playlistIndex == -1) {
+      return const Scaffold(body: Center(child: Text('Playlist not found')));
+    }
     final playlist = app.playlists[playlistIndex];
 
     final songsById = {for (final s in app.songsCache) s.id: s};
@@ -36,16 +34,16 @@ class PlaylistDetailScreen extends StatelessWidget {
         .toList();
 
     return Scaffold(
-      backgroundColor: _bgDeep,
-      extendBody: true, // Allows content to scroll under floating bars
+      backgroundColor: AppColors.bgDeep,
+      extendBody: true,
       appBar: _buildAppBar(context, playlist, accent),
       floatingActionButton: _buildFAB(context, accent),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: RadialGradient(
-            center: Alignment(0, -0.4),
+            center: const Alignment(0, -0.4),
             radius: 1.2,
-            colors: [Color(0xFF1C1C21), _bgDeep],
+            colors: [AppColors.bgGlass, AppColors.bgDeep],
           ),
         ),
         child: SafeArea(
@@ -65,8 +63,8 @@ class PlaylistDetailScreen extends StatelessWidget {
             Navigator.push(
               context,
               PageRouteBuilder(
-                pageBuilder: (context, anim, __) => const NowPlayingScreen(),
-                transitionsBuilder: (context, anim, __, child) {
+                pageBuilder: (context, anim, _) => const NowPlayingScreen(),
+                transitionsBuilder: (context, anim, _, child) {
                   return SlideTransition(
                     position: Tween(begin: const Offset(0, 1), end: Offset.zero)
                         .chain(CurveTween(curve: Curves.easeOutQuart))
@@ -82,13 +80,17 @@ class PlaylistDetailScreen extends StatelessWidget {
     );
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, playlist, Color accent) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, dynamic playlist, Color accent) {
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
       centerTitle: true,
       leading: IconButton(
-        icon: const Icon(Icons.keyboard_arrow_left_rounded, color: Colors.white, size: 32),
+        icon: const Icon(
+          Icons.keyboard_arrow_left_rounded,
+          color: Colors.white,
+          size: 32,
+        ),
         onPressed: () {
           HapticFeedback.lightImpact();
           Navigator.maybePop(context);
@@ -96,18 +98,38 @@ class PlaylistDetailScreen extends StatelessWidget {
       ),
       title: Column(
         children: [
-          Text('PLAYLIST', style: TextStyle(color: accent.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 4)),
+          Text(
+            'PLAYLIST',
+            style: TextStyle(
+              color: accent.withValues(alpha: 0.6),
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 4,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(playlist.name, style: const TextStyle(color: _textPrimary, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2)),
+          Text(
+            playlist.name,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
+          ),
         ],
       ),
       actions: [
-        _IconCircleButton(
+        IconCircleButton(
           onTap: () {
             HapticFeedback.lightImpact();
             _renameDialog(context, playlist);
           },
-          child: const Icon(Icons.drive_file_rename_outline_rounded, color: _textSecondary, size: 18),
+          child: Icon(
+            Icons.drive_file_rename_outline_rounded,
+            color: AppColors.textSecondary,
+            size: 18,
+          ),
         ),
         const SizedBox(width: 16),
       ],
@@ -115,57 +137,46 @@ class PlaylistDetailScreen extends StatelessWidget {
   }
 
   Widget _buildFAB(BuildContext context, Color accent) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 80), // Position above MiniPlayer
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 80.0),
       child: FloatingActionButton(
         onPressed: () {
           HapticFeedback.mediumImpact();
           _openAddSongs(context);
         },
         backgroundColor: accent,
-        elevation: 12,
-        shape: const CircleBorder(),
-        child: Ink(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [accent.withOpacity(0.85), accent],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: const SizedBox.expand(child: Icon(Icons.add_rounded, color: Colors.white, size: 30)),
-        ),
+        elevation: 10,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
       ),
     );
   }
 
   Widget _buildSongList(BuildContext context, AppState app, List<Song> songs) {
+    final accent = Theme.of(context).colorScheme.primary;
+
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 140),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
       physics: const BouncingScrollPhysics(),
       itemCount: songs.length,
       itemBuilder: (context, index) {
-        final s = songs[index];
-
+        final song = songs[index];
         return _DetailSongRow(
-          song: s,
+          song: song,
           index: index,
-          accentColor: Theme.of(context).colorScheme.primary,
-          onPlay: () async {
+          accentColor: accent,
+          onPlay: () {
             HapticFeedback.selectionClick();
-            await app.player.setQueue(songs, startIndex: index);
-            await app.player.play();
+            app.player.setQueue(songs, startIndex: index);
           },
           onRemove: () {
-            HapticFeedback.mediumImpact();
-            app.removeSongFromPlaylist(playlistId: playlistId, songId: s.id);
+            HapticFeedback.lightImpact();
+            app.removeSongFromPlaylist(playlistId: playlistId, songId: song.id);
           },
         );
       },
     );
   }
-
 
   Widget _buildEmptyState(BuildContext context, Color accent) {
     return Center(
@@ -174,26 +185,51 @@ class PlaylistDetailScreen extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(shape: BoxShape.circle, color: accent.withOpacity(0.05), border: Border.all(color: accent.withOpacity(0.1))),
-            child: Icon(Icons.library_music_rounded, size: 48, color: accent.withOpacity(0.3)),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.bgGlass,
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
+            child: Icon(
+              Icons.music_off_rounded,
+              size: 48,
+              color: AppColors.textMuted,
+            ),
           ),
           const SizedBox(height: 24),
-          const Text('Your playlist is empty', style: TextStyle(color: _textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+          Text(
+            'Your playlist is empty',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 8),
-          const Text('Tap the button below to add your favorite tracks.', style: TextStyle(color: _textSecondary, fontSize: 14), textAlign: TextAlign.center),
+          Text(
+            'Tap the button below to add your favorite tracks.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
   }
 
-  Future<void> _renameDialog(BuildContext context, playlist) async {
+  Future<void> _renameDialog(BuildContext context, dynamic playlist) async {
     final ctrl = TextEditingController(text: playlist.name);
     final accent = Theme.of(context).colorScheme.primary;
 
     final ok = await showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.8),
-      builder: (_) => _ThemedDialog(title: 'Rename Playlist', hint: 'Enter name...', confirmLabel: 'Update', controller: ctrl, accentColor: accent),
+      barrierColor: Colors.black.withValues(alpha: 0.8),
+      builder: (_) => ThemedInputDialog(
+        title: 'Rename Playlist',
+        hint: 'Enter name...',
+        confirmLabel: 'Update',
+        controller: ctrl,
+        accentColor: accent,
+      ),
     );
     if (ok == true && ctrl.text.trim().isNotEmpty) {
       if (!context.mounted) return;
@@ -210,17 +246,11 @@ class PlaylistDetailScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.7),
-      transitionAnimationController: AnimationController(
-        vsync: Navigator.of(context),
-        duration: const Duration(milliseconds: 500),
-      ),
+      barrierColor: Colors.black.withValues(alpha: 0.7),
       builder: (context) => _AddSongsSheet(playlistId: playlistId),
     );
   }
 }
-
-// ── Detail Song Row ─────────────────────────────────────────────────────────
 
 // ── Detail Song Row ─────────────────────────────────────────────────────────
 
@@ -236,7 +266,7 @@ class _DetailSongRow extends StatefulWidget {
     required this.index,
     required this.accentColor,
     required this.onPlay,
-    required this.onRemove
+    required this.onRemove,
   });
 
   @override
@@ -250,66 +280,110 @@ class _DetailSongRowState extends State<_DetailSongRow> {
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
 
-    // The StreamBuilder listens to the player and rebuilds the row instantly
-    // whenever the current song changes.
     return StreamBuilder<Song?>(
-        stream: app.player.currentSongStream,
-        initialData: app.player.currentSong,
-        builder: (context, snap) {
-          final isPlaying = snap.data?.id == widget.song.id;
-          final color = isPlaying ? widget.accentColor : const Color(0xFFFAFAFA);
+      stream: app.player.currentSongStream,
+      initialData: app.player.currentSong,
+      builder: (context, snap) {
+        final isPlaying = snap.data?.id == widget.song.id;
+        final color = isPlaying ? widget.accentColor : AppColors.textPrimary;
 
-          return GestureDetector(
-            onTapDown: (_) => setState(() => _pressed = true),
-            onTapUp: (_) { setState(() => _pressed = false); widget.onPlay(); },
-            onTapCancel: () => setState(() => _pressed = false),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: _pressed ? Colors.white.withOpacity(0.05) : (isPlaying ? widget.accentColor.withOpacity(0.08) : Colors.transparent),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 32,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: isPlaying
-                          ? Icon(Icons.bar_chart_rounded, color: widget.accentColor, size: 20, key: const ValueKey('playing'))
-                          : Text('${widget.index + 1}'.padLeft(2, '0'), style: const TextStyle(color: Color(0xFF71717A), fontSize: 12, fontWeight: FontWeight.bold), key: const ValueKey('index')),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(widget.song.title, style: TextStyle(color: color, fontSize: 14, fontWeight: isPlaying ? FontWeight.w900 : FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 4),
-                        Text(widget.song.artist, style: TextStyle(color: isPlaying ? widget.accentColor.withOpacity(0.7) : const Color(0xFFA1A1AA), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onRemove,
-                    icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.redAccent, size: 20),
-                    style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
-                  ),
-                ],
-              ),
+        return GestureDetector(
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) {
+            setState(() => _pressed = false);
+            widget.onPlay();
+          },
+          onTapCancel: () => setState(() => _pressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: _pressed
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : (isPlaying
+                      ? widget.accentColor.withValues(alpha: 0.08)
+                      : Colors.transparent),
+              borderRadius: BorderRadius.circular(16),
             ),
-          );
-        }
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 32,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: isPlaying
+                        ? Icon(
+                            Icons.bar_chart_rounded,
+                            color: widget.accentColor,
+                            size: 20,
+                            key: const ValueKey('playing'),
+                          )
+                        : Text(
+                            '${widget.index + 1}'.padLeft(2, '0'),
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            key: const ValueKey('index'),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.song.title,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 14,
+                          fontWeight:
+                              isPlaying ? FontWeight.w900 : FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.song.artist,
+                        style: TextStyle(
+                          color: isPlaying
+                              ? widget.accentColor.withValues(alpha: 0.7)
+                              : AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: widget.onRemove,
+                  icon: const Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: Colors.redAccent,
+                    size: 20,
+                  ),
+                  style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
+
 // ── Add Songs Bottom Sheet ───────────────────────────────────────────────────
 
 class _AddSongsSheet extends StatelessWidget {
   final String playlistId;
+
   const _AddSongsSheet({required this.playlistId});
 
   @override
@@ -330,7 +404,14 @@ class _AddSongsSheet extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(10))),
+          Container(
+            width: 40,
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Row(
@@ -339,13 +420,35 @@ class _AddSongsSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ADD TO PLAYLIST', style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 2)),
+                      Text(
+                        'ADD TO PLAYLIST',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text('${songs.length} tracks found', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+                      Text(
+                        '${songs.length} tracks found',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                _IconCircleButton(onTap: () => Navigator.pop(context), child: const Icon(Icons.close_rounded, color: Colors.white, size: 18)),
+                IconCircleButton(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
               ],
             ),
           ),
@@ -358,9 +461,14 @@ class _AddSongsSheet extends StatelessWidget {
               itemBuilder: (context, index) {
                 final s = songs[index];
                 return _AddSongRow(
-                  song: s, index: index, accentColor: accent,
+                  song: s,
+                  index: index,
+                  accentColor: accent,
                   isInitiallyAdded: existingSongIds.contains(s.id),
-                  onAdd: () => app.addSongToPlaylist(playlistId: playlistId, songId: s.id),
+                  onAdd: () => app.addSongToPlaylist(
+                    playlistId: playlistId,
+                    songId: s.id,
+                  ),
                 );
               },
             ),
@@ -378,7 +486,13 @@ class _AddSongRow extends StatefulWidget {
   final bool isInitiallyAdded;
   final VoidCallback onAdd;
 
-  const _AddSongRow({required this.song, required this.index, required this.accentColor, required this.isInitiallyAdded, required this.onAdd});
+  const _AddSongRow({
+    required this.song,
+    required this.index,
+    required this.accentColor,
+    required this.isInitiallyAdded,
+    required this.onAdd,
+  });
 
   @override
   State<_AddSongRow> createState() => _AddSongRowState();
@@ -389,7 +503,10 @@ class _AddSongRowState extends State<_AddSongRow> {
   bool _pressed = false;
 
   @override
-  void initState() { super.initState(); _added = widget.isInitiallyAdded; }
+  void initState() {
+    super.initState();
+    _added = widget.isInitiallyAdded;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -402,7 +519,7 @@ class _AddSongRowState extends State<_AddSongRow> {
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: _pressed ? Colors.white.withOpacity(0.03) : Colors.transparent,
+          color: _pressed ? Colors.white.withValues(alpha: 0.03) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -411,110 +528,70 @@ class _AddSongRowState extends State<_AddSongRow> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.song.title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+                  Text(
+                    widget.song.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                  ),
                   const SizedBox(height: 4),
-                  Text(widget.song.artist, style: const TextStyle(color: Color(0xFFA1A1AA), fontSize: 12), maxLines: 1),
+                  Text(
+                    widget.song.artist,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                  ),
                 ],
               ),
             ),
             GestureDetector(
-              onTap: _added ? null : () {
-                HapticFeedback.lightImpact();
-                widget.onAdd();
-                setState(() => _added = true);
-              },
+              onTap: _added
+                  ? null
+                  : () {
+                      HapticFeedback.lightImpact();
+                      widget.onAdd();
+                      setState(() => _added = true);
+                    },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeOutBack,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _added ? widget.accentColor.withOpacity(0.15) : Colors.white.withOpacity(0.05),
+                  color: _added
+                      ? widget.accentColor.withValues(alpha: 0.15)
+                      : Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _added ? widget.accentColor : Colors.white10),
+                  border: Border.all(
+                    color: _added ? widget.accentColor : Colors.white10,
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(_added ? Icons.check_rounded : Icons.add_rounded, color: _added ? widget.accentColor : Colors.white70, size: 16),
+                    Icon(
+                      _added ? Icons.check_rounded : Icons.add_rounded,
+                      color: _added ? widget.accentColor : Colors.white70,
+                      size: 16,
+                    ),
                     const SizedBox(width: 6),
-                    Text(_added ? 'Added' : 'Add', style: TextStyle(color: _added ? widget.accentColor : Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+                    Text(
+                      _added ? 'Added' : 'Add',
+                      style: TextStyle(
+                        color: _added ? widget.accentColor : Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── Themed Dialog & Button ───────────────────────────────────────────────────
-
-class _ThemedDialog extends StatelessWidget {
-  final String title;
-  final String hint;
-  final String confirmLabel;
-  final TextEditingController controller;
-  final Color accentColor;
-
-  const _ThemedDialog({required this.title, required this.hint, required this.confirmLabel, required this.controller, required this.accentColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF18181B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: Colors.white10)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(title, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 20),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: const TextStyle(color: Colors.white24),
-                filled: true,
-                fillColor: Colors.black26,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Color(0xFFA1A1AA)))),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(backgroundColor: accentColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  child: Text(confirmLabel),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IconCircleButton extends StatelessWidget {
-  final Widget child;
-  final VoidCallback? onTap;
-  const _IconCircleButton({required this.child, this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40, height: 40,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF18181B), border: Border.all(color: Colors.white.withOpacity(0.08))),
-        child: Center(child: child),
       ),
     );
   }
